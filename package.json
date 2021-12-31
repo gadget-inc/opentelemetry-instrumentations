@@ -1,0 +1,30 @@
+{
+  "name": "@gadgetinc/opentelemetry-instrumentations",
+  "version": "0.1.0",
+  "main": "index.js",
+  "author": "Gadget Authors",
+  "license": "MIT",
+  "private": true,
+  "workspaces": [
+    "packages/opentelemetry-instrumentation-ws"
+  ],
+  "scripts": {
+    "lint": "yarn run lint:prettier && yarn run lint:eslint",
+    "lint:prettier": "node --max-old-space-size=4096 node_modules/.bin/prettier --check \"packages/**/*.{js,ts,tsx}\"",
+    "lint:eslint": "node --max-old-space-size=4096 node_modules/.bin/eslint --quiet --ext ts,tsx packages",
+    "lint:fix": "node --max-old-space-size=4096 node_modules/.bin/prettier --write --check \"packages/**/*.{js,ts,tsx}\" && eslint --ext ts,tsx --fix packages",
+    "typecheck": "yarn workspaces run tsc --noEmit",
+    "build": "yarn workspaces run build",
+    "test": "node --max-old-space-size=4096 --stack-trace-limit=1000 node_modules/.bin/jest"
+  },
+  "devDependencies": {
+    "@gadgetinc/eslint-config": "^0.4.0",
+    "@gadgetinc/prettier-config": "*",
+    "eslint": "^7.32.0",
+    "gitpkg": "^1.0.0-beta.2",
+    "jest-junit": "^12.0.0",
+    "npm-run-all": "^4.1.5",
+    "prettier": "^2.4.1",
+    "typescript": "4.5.3"
+  }
+}

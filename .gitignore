@@ -1,0 +1,11 @@
+node_modules
+.env
+.envrc.local
+yarn-error.log
+.yarn
+tsconfig.tsbuildinfo
+.vscode/settings.json
+.DS_Store
+TODO
+.direnv
+packages/*/dist
