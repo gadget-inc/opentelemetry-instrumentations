@@ -12,14 +12,6 @@ import isPromise from "is-promise";
 import WS, { ErrorEvent, WebSocket } from "ws";
 import { WSInstrumentationConfig } from "./types";
 
-const normalizeConfig = (config?: WSInstrumentationConfig) => {
-  config = Object.assign({}, config);
-  if (typeof config.messageEvents == "undefined") {
-    config.messageEvents = true;
-  }
-  return config;
-};
-
 const endSpan = (traced: () => any | Promise<any>, span: Span) => {
   try {
     const result = traced();
@@ -59,7 +51,7 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
   protected override _config: WSInstrumentationConfig = {};
 
   constructor(config: WSInstrumentationConfig = {}) {
-    super("opentelemetry-instrumentation-ws", "0.27.0", normalizeConfig(config));
+    super("opentelemetry-instrumentation-ws", "0.27.0", config);
   }
 
   protected init() {
@@ -97,10 +89,6 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
         }
       ),
     ];
-  }
-
-  override setConfig(config: WSInstrumentationConfig) {
-    return super.setConfig(normalizeConfig(config));
   }
 
   private _patchConstructor(OriginalWebSocket: typeof WebSocket) {
