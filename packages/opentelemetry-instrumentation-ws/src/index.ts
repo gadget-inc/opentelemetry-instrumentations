@@ -1,23 +1,21 @@
 /* eslint-disable @typescript-eslint/no-this-alias */
 /* eslint-disable @typescript-eslint/ban-types */
-import { context, diag, propagation, Span, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
+import { context, Context, diag, propagation, Span, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
 import {
   InstrumentationBase,
   InstrumentationNodeModuleDefinition,
   isWrapped,
   safeExecuteInTheMiddle,
 } from "@opentelemetry/instrumentation";
-import { MessagingOperationValues, SemanticAttributes } from "@opentelemetry/semantic-conventions";
+import { SemanticAttributes } from "@opentelemetry/semantic-conventions";
 import isPromise from "is-promise";
-import WS, { WebSocket } from "ws";
+import WS, { ErrorEvent, WebSocket } from "ws";
 import { WSInstrumentationConfig } from "./types";
-
-export const WSInstrumentationAttributes = {};
 
 const normalizeConfig = (config?: WSInstrumentationConfig) => {
   config = Object.assign({}, config);
-  if (!Array.isArray(config.onIgnoreEventList)) {
-    config.onIgnoreEventList = [];
+  if (typeof config.messageEvents == "undefined") {
+    config.messageEvents = true;
   }
   return config;
 };
@@ -51,6 +49,11 @@ const endSpan = (traced: () => any | Promise<any>, span: Span) => {
   }
 };
 
+interface ExtendedWebsocket extends WebSocket {
+  _parentContext: Context;
+  _openSpan: Span | undefined;
+}
+
 /** Instrumentation for the `ws` library WebSocket class */
 export class WSInstrumentation extends InstrumentationBase<WS> {
   protected override _config: WSInstrumentationConfig = {};
@@ -77,15 +80,15 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
 
           const WebSocket = this._patchConstructor(moduleExports as any);
 
-          if (isWrapped(WebSocket.prototype.on)) {
-            this._unwrap(WebSocket.prototype, "on");
-          }
-          this._wrap(WebSocket.prototype, "on", this._patchOn);
-
           if (isWrapped(WebSocket.prototype.send)) {
             this._unwrap(WebSocket.prototype, "send");
           }
           this._wrap(WebSocket.prototype, "send", this._patchSend);
+
+          if (isWrapped(WebSocket.prototype.close)) {
+            this._unwrap(WebSocket.prototype, "close");
+          }
+          this._wrap(WebSocket.prototype, "close", this._patchClose);
 
           return WebSocket as any;
         },
@@ -103,10 +106,13 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
   private _patchConstructor(OriginalWebSocket: typeof WebSocket) {
     const self = this;
 
-    const klass = class WebSocket extends OriginalWebSocket {
+    const klass = class WebSocket extends OriginalWebSocket implements ExtendedWebsocket {
+      _parentContext: Context;
+      _openSpan: Span | undefined;
+
       constructor(address: string, protocols: any, options: any) {
         let connectingSpan: Span | null = null;
-        const parentContext = context.active();
+
         if (!options) {
           options = {};
         }
@@ -130,6 +136,7 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
         }
 
         super(address, protocols, options);
+        this._parentContext = context.active();
 
         if (connectingSpan) {
           connectingSpan.setAttributes({
@@ -137,17 +144,54 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
             [SemanticAttributes.MESSAGING_PROTOCOL]: this.protocol,
           });
 
-          this.once("open", () => {
-            connectingSpan!.end();
-          });
-
-          this.once("error", (error) => {
+          const connectionErrorListener = (error: ErrorEvent) => {
             connectingSpan!.recordException(error);
             connectingSpan!.setStatus({ code: SpanStatusCode.ERROR, message: error?.message });
             connectingSpan!.end();
+          };
+
+          this.once("error", connectionErrorListener);
+
+          this.once("open", () => {
+            connectingSpan!.end();
+            this.removeEventListener("error", connectionErrorListener);
           });
 
-          context.bind(parentContext, this);
+          context.bind(this._parentContext, this);
+        }
+
+        this.once("open", () => {
+          this._openSpan = self.tracer.startSpan(`WS open`, {
+            kind: connectingSpan ? SpanKind.CLIENT : SpanKind.SERVER,
+            attributes: {
+              [SemanticAttributes.MESSAGING_SYSTEM]: "ws",
+              [SemanticAttributes.MESSAGING_DESTINATION_KIND]: "websocket",
+            },
+          });
+          // we don't really have anything to do with the new context returned here, just let it float
+          trace.setSpan(context.active(), this._openSpan);
+        });
+
+        this.once("error", (error: ErrorEvent) => {
+          this._openSpan?.recordException(error);
+          this._openSpan?.setStatus({ code: SpanStatusCode.ERROR, message: error?.message });
+        });
+
+        this.once("close", (close: CloseEvent) => {
+          this._openSpan?.setAttributes({
+            "ws.close.code": close.code,
+            "ws.close.reason": close.reason,
+            "ws.close.wasClean": close.wasClean,
+          });
+          this._openSpan?.end();
+        });
+
+        if (self._config.messageEvents) {
+          this.on("message", (_message: MessageEvent) => {
+            this._openSpan?.addEvent("ws.incoming-message", {
+              [SemanticAttributes.MESSAGING_SYSTEM]: "ws",
+            });
+          });
         }
       }
     };
@@ -157,45 +201,10 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
     return klass;
   }
 
-  private _patchOn = (original: (this: WebSocket, event: any, listener: any) => any) => {
+  private _patchSend = (original: (this: ExtendedWebsocket, data: string, options?: any, callback?: any) => any) => {
     const self = this;
 
-    return function (this: WebSocket, event: any, originalListener: any) {
-      let listener = originalListener;
-      if (event == "message") {
-        listener = function (this: WebSocket, ...args: any[]) {
-          const eventName = event;
-
-          const span: Span = self.tracer.startSpan(`WS ${eventName}`, {
-            kind: SpanKind.CONSUMER,
-            attributes: {
-              [SemanticAttributes.MESSAGING_SYSTEM]: "ws",
-              [SemanticAttributes.MESSAGING_DESTINATION]: this.url,
-              [SemanticAttributes.MESSAGING_OPERATION]: MessagingOperationValues.RECEIVE,
-            },
-          });
-
-          if (self._config.onHook) {
-            safeExecuteInTheMiddle(
-              () => self._config.onHook!(span, { payload: args }),
-              (e) => {
-                if (e) diag.error(`ws instrumentation: onHook failed`, e);
-              },
-              true
-            );
-          }
-          return context.with(trace.setSpan(context.active(), span), () => endSpan(() => originalListener.apply(this, args), span));
-        };
-      }
-
-      return original.call(this, event, listener);
-    };
-  };
-
-  private _patchSend = (original: (this: WebSocket, data: string, options?: any, callback?: any) => any) => {
-    const self = this;
-
-    return function (this: WebSocket, data: string, options?: any, callback?: any) {
+    return function (this: ExtendedWebsocket, data: string, options?: any, callback?: any) {
       if (typeof options === "function") {
         callback = options;
         options = {};
@@ -240,6 +249,33 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
           callback?.(err, ...results);
         });
       });
+    };
+  };
+
+  private _patchClose = (original: (this: ExtendedWebsocket, ...args: any[]) => any) => {
+    const self = this;
+
+    return function (this: ExtendedWebsocket, ...args: any[]) {
+      const span = self.tracer.startSpan(`WS close`, {
+        kind: SpanKind.CLIENT,
+        attributes: {
+          [SemanticAttributes.MESSAGING_DESTINATION]: this.url,
+        },
+      });
+
+      if (self._config.closeHook) {
+        safeExecuteInTheMiddle(
+          () => self._config.closeHook!(span, { payload: args }),
+          (e) => {
+            if (e) {
+              diag.error("ws instrumentation: closeHook failed", e);
+            }
+          },
+          true
+        );
+      }
+
+      return context.with(trace.setSpan(context.active(), span), () => endSpan(() => original.apply(this, args as any), span));
     };
   };
 }

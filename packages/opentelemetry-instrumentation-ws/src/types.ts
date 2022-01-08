@@ -10,8 +10,8 @@ export type HookFunction = (span: Span, hookInfo: HookInfo) => void;
 export interface WSInstrumentationConfig extends InstrumentationConfig {
   /** Hook for adding custom attributes before ws sends a message */
   sendHook?: HookFunction;
-  /** Hook for adding custom attributes before the event listener (callback) is invoked */
-  onHook?: HookFunction;
-  /** list of events to ignore tracing on for socket.io listeners */
-  onIgnoreEventList?: string[];
+  /** Hook for adding custom attributes before ws closes a socket */
+  closeHook?: HookFunction;
+  /** include span events for individual websocket messages */
+  messageEvents?: boolean;
 }
