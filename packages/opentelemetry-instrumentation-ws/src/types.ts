@@ -12,6 +12,8 @@ export interface WSInstrumentationConfig extends InstrumentationConfig {
   sendHook?: HookFunction;
   /** Hook for adding custom attributes before ws closes a socket */
   closeHook?: HookFunction;
+  /** Hook for adding custom attributes before a ws server upgrades a request */
+  handleUpgradeHook?: HookFunction;
   /** include span events for individual websocket messages */
   messageEvents?: boolean;
 }

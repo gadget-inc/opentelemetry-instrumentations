@@ -1,15 +1,21 @@
 /* eslint-disable @typescript-eslint/no-this-alias */
 /* eslint-disable @typescript-eslint/ban-types */
-import { context, Context, diag, propagation, Span, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
+import { context, Context, diag, propagation, ROOT_CONTEXT, Span, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
+import { RPCMetadata, RPCType, setRPCMetadata } from "@opentelemetry/core";
 import {
   InstrumentationBase,
   InstrumentationNodeModuleDefinition,
   isWrapped,
   safeExecuteInTheMiddle,
 } from "@opentelemetry/instrumentation";
+import { getIncomingRequestAttributes } from "@opentelemetry/instrumentation-http";
 import { SemanticAttributes } from "@opentelemetry/semantic-conventions";
+import type * as http from "http";
+import type * as https from "http";
+import { IncomingMessage } from "http";
 import isPromise from "is-promise";
-import WS, { ErrorEvent, WebSocket } from "ws";
+import { Duplex } from "stream";
+import WS, { ErrorEvent, Server, WebSocket } from "ws";
 import { WSInstrumentationConfig } from "./types";
 
 const endSpan = (traced: () => any | Promise<any>, span: Span) => {
@@ -49,6 +55,7 @@ interface ExtendedWebsocket extends WebSocket {
 /** Instrumentation for the `ws` library WebSocket class */
 export class WSInstrumentation extends InstrumentationBase<WS> {
   protected override _config: WSInstrumentationConfig = {};
+  protected _requestSpans = new WeakMap<IncomingMessage, Span>();
 
   constructor(config: WSInstrumentationConfig = {}) {
     super("opentelemetry-instrumentation-ws", "0.27.0", config);
@@ -82,10 +89,53 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
           }
           this._wrap(WebSocket.prototype, "close", this._patchClose);
 
+          if (isWrapped(WebSocket.Server.prototype.handleUpgrade)) {
+            this._unwrap(WebSocket.Server.prototype, "handleUpgrade");
+          }
+          this._wrap(WebSocket.Server.prototype, "handleUpgrade", this._patchServerHandleUpgrade);
+
           return WebSocket as any;
         },
         (moduleExports) => {
           return (moduleExports as any).__original;
+        }
+      ),
+      new InstrumentationNodeModuleDefinition<typeof http>(
+        "http",
+        ["*"],
+        (moduleExports) => {
+          if (moduleExports === undefined || moduleExports === null) {
+            return moduleExports;
+          }
+
+          diag.debug(`ws instrumentation: applying patch to http`);
+
+          this._wrap(moduleExports.Server.prototype, "emit", this._patchIncomingRequestEmit);
+          return moduleExports;
+        },
+        (moduleExports) => {
+          if (moduleExports === undefined) return;
+          this._diag.debug(`Removing patch for http`);
+          this._unwrap(moduleExports.Server.prototype, "emit");
+        }
+      ),
+      new InstrumentationNodeModuleDefinition<typeof https>(
+        "https",
+        ["*"],
+        (moduleExports) => {
+          if (moduleExports === undefined || moduleExports === null) {
+            return moduleExports;
+          }
+
+          diag.debug(`ws instrumentation: applying patch to https`);
+
+          this._wrap(moduleExports.Server.prototype, "emit", this._patchIncomingRequestEmit);
+          return moduleExports;
+        },
+        (moduleExports) => {
+          if (moduleExports === undefined) return;
+          this._diag.debug(`Removing patch for https`);
+          this._unwrap(moduleExports.Server.prototype, "emit");
         }
       ),
     ];
@@ -264,6 +314,122 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
       }
 
       return context.with(trace.setSpan(context.active(), span), () => endSpan(() => original.apply(this, args as any), span));
+    };
+  };
+
+  private _patchIncomingRequestEmit = (original: (this: unknown, event: string, ...args: any[]) => boolean) => {
+    const self = this;
+
+    return function incomingRequest(this: unknown, event: string, ...args: any[]): boolean {
+      // Only traces upgrade events
+      if (event !== "upgrade") {
+        return original.call(this, event, ...args);
+      }
+      const request = args[0] as IncomingMessage;
+      const emitter = this;
+
+      const ctx = propagation.extract(ROOT_CONTEXT, request.headers);
+      const span = self.tracer.startSpan(
+        `HTTP GET WS`,
+        {
+          kind: SpanKind.SERVER,
+          attributes: getIncomingRequestAttributes(request, {
+            component: "WS",
+            hookAttributes: {
+              [SemanticAttributes.NET_HOST_IP]: request.socket.localAddress,
+              [SemanticAttributes.NET_HOST_PORT]: request.socket.localPort,
+              [SemanticAttributes.NET_PEER_IP]: request.socket.remoteAddress,
+              [SemanticAttributes.NET_PEER_PORT]: request.socket.remotePort,
+            },
+          }),
+        },
+        ctx
+      );
+
+      const rpcMetadata: RPCMetadata = {
+        type: RPCType.HTTP,
+        span,
+      };
+
+      self._requestSpans.set(request, span);
+      return context.with(setRPCMetadata(trace.setSpan(ctx, span), rpcMetadata), () => {
+        context.bind(context.active(), request);
+        try {
+          return original.call(emitter, event, ...args);
+        } catch (error: any) {
+          span.recordException(error);
+          span.setStatus({ code: SpanStatusCode.ERROR, message: error?.message });
+          span.end();
+          self._requestSpans.delete(request);
+          throw error;
+        }
+      });
+    };
+  };
+
+  private _patchServerHandleUpgrade = (
+    original: (
+      this: Server,
+      request: IncomingMessage,
+      socket: Duplex,
+      upgradeHead: Buffer,
+      callback: (client: WebSocket, request: IncomingMessage) => void
+    ) => any
+  ) => {
+    const self = this;
+
+    return function (
+      this: Server,
+      request: IncomingMessage,
+      socket: Duplex,
+      upgradeHead: Buffer,
+      callback: (client: WebSocket, request: IncomingMessage) => void
+    ) {
+      const parentSpan = self._requestSpans.get(request);
+      const span = self.tracer.startSpan(`WS upgrade`, {
+        kind: SpanKind.SERVER,
+        attributes: getIncomingRequestAttributes(request, {
+          component: "WS",
+          hookAttributes: {
+            [SemanticAttributes.NET_HOST_IP]: request.socket.localAddress,
+            [SemanticAttributes.NET_HOST_PORT]: request.socket.localPort,
+            [SemanticAttributes.NET_PEER_IP]: request.socket.remoteAddress,
+            [SemanticAttributes.NET_PEER_PORT]: request.socket.remotePort,
+          },
+        }),
+      });
+
+      if (self._config.handleUpgradeHook) {
+        safeExecuteInTheMiddle(
+          () => self._config.handleUpgradeHook!(span, { payload: { request, socket, upgradeHead } }),
+          (e) => {
+            if (e) {
+              diag.error("ws instrumentation: handleUpgradeHook failed", e);
+            }
+          },
+          true
+        );
+      }
+
+      return context.with(trace.setSpan(context.active(), span), () => {
+        context.bind(context.active(), request);
+
+        return endSpan(
+          () =>
+            original.call(this, request, socket, upgradeHead, function (this: any, websocket: WebSocket, request: IncomingMessage) {
+              context.bind(context.active(), websocket);
+
+              parentSpan?.setAttributes({
+                [SemanticAttributes.HTTP_STATUS_CODE]: 101,
+              });
+              parentSpan?.end();
+              self._requestSpans.delete(request);
+
+              return callback.call(this, websocket, request);
+            }),
+          span
+        );
+      });
     };
   };
 }

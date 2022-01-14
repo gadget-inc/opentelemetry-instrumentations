@@ -1,6 +1,6 @@
 # opentelemetry-instrumentation-ws
 
-Adds opentelemetry tracing instrumentation for the `ws` library. Traces socket opens, closes, sends, and optionally messages.
+Adds opentelemetry tracing instrumentation for the `ws` library. Traces socket opens, closes, sends, and optionally messages for the `WebSocket` constructor, and traces upgrades that happen on `http.Server`, `https.Server`, and `WebSocket.Server`.
 
 ## Installation
 
@@ -39,8 +39,9 @@ registerInstrumentations({
 
 The `ws` instrumentation has few options available to choose from. You can set the following:
 
-| Options         | Type                                     | Description                                                                                    |
-| --------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `sendHook`      | (span: Span, hookInfo: HookInfo) => void | hook for adding custom attributes to the ws send span when a websocket sends a message         |
-| `closeHook`     | (span: Span, hookInfo: HookInfo) => void | hook for adding custom attributes to the ws close span when a websocket is imperatively closed |
-| `messageEvents` | boolean                                  | should the tracing library add span events for each received message. Default: false           |
+| Options             | Type                                     | Description                                                                                                    |
+| ------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `sendHook`          | (span: Span, hookInfo: HookInfo) => void | hook for adding custom attributes to the ws send span when a websocket sends a message                         |
+| `closeHook`         | (span: Span, hookInfo: HookInfo) => void | hook for adding custom attributes to the ws close span when a websocket is imperatively closed                 |
+| `handleUpgradeHook` | (span: Span, hookInfo: HookInfo) => void | hook for adding custom attributes to the ws.Server handleUpgrade span when a socket is opened against a server |
+| `messageEvents`     | boolean                                  | should the tracing library add span events for each received message. Default: false                           |
