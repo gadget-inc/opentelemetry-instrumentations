@@ -194,8 +194,6 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
             connectingSpan!.end();
             this.removeEventListener("error", connectionErrorListener);
           });
-
-          context.bind(this._parentContext, this);
         }
 
         this.once("open", () => {
@@ -353,7 +351,6 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
 
       self._requestSpans.set(request, span);
       return context.with(setRPCMetadata(trace.setSpan(ctx, span), rpcMetadata), () => {
-        context.bind(context.active(), request);
         try {
           return original.call(emitter, event, ...args);
         } catch (error: any) {
@@ -412,13 +409,9 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
       }
 
       return context.with(trace.setSpan(context.active(), span), () => {
-        context.bind(context.active(), request);
-
         return endSpan(
           () =>
             original.call(this, request, socket, upgradeHead, function (this: any, websocket: WebSocket, request: IncomingMessage) {
-              context.bind(context.active(), websocket);
-
               parentSpan?.setAttributes({
                 [SemanticAttributes.HTTP_STATUS_CODE]: 101,
               });
