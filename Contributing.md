@@ -21,7 +21,7 @@ It can be annoying to work with these packages via `yarn link` sometimes, so we 
 Right now we release through yarn. Run
 
 ```
-yarn workspace opentelemetry-ws publish --access=public --no-git-tag-version
+yarn workspace opentelemetry-instrumentation-ws publish --access=public
 ```
 
 to push a new version to NPM.
