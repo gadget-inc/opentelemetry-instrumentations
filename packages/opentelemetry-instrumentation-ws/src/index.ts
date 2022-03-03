@@ -62,6 +62,8 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
   }
 
   protected init() {
+    const self = this;
+
     return [
       new InstrumentationNodeModuleDefinition<WS>(
         "ws",
@@ -79,10 +81,12 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
 
           const WebSocket = this._patchConstructor(moduleExports as any);
 
-          if (isWrapped(WebSocket.prototype.send)) {
-            this._unwrap(WebSocket.prototype, "send");
+          if (self._config.sendSpans) {
+            if (isWrapped(WebSocket.prototype.send)) {
+              this._unwrap(WebSocket.prototype, "send");
+            }
+            this._wrap(WebSocket.prototype, "send", this._patchSend);
           }
-          this._wrap(WebSocket.prototype, "send", this._patchSend);
 
           if (isWrapped(WebSocket.prototype.close)) {
             this._unwrap(WebSocket.prototype, "close");

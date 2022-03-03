@@ -41,7 +41,8 @@ The `ws` instrumentation has few options available to choose from. You can set t
 
 | Options             | Type                                     | Description                                                                                                    |
 | ------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `sendSpans`         | boolean                                  | should the tracing library add spans for each sent message. Default: false                                     |
+| `messageEvents`     | boolean                                  | should the tracing library add span events for each incoming message. Default: false                           |
 | `sendHook`          | (span: Span, hookInfo: HookInfo) => void | hook for adding custom attributes to the ws send span when a websocket sends a message                         |
 | `closeHook`         | (span: Span, hookInfo: HookInfo) => void | hook for adding custom attributes to the ws close span when a websocket is imperatively closed                 |
 | `handleUpgradeHook` | (span: Span, hookInfo: HookInfo) => void | hook for adding custom attributes to the ws.Server handleUpgrade span when a socket is opened against a server |
-| `messageEvents`     | boolean                                  | should the tracing library add span events for each received message. Default: false                           |
