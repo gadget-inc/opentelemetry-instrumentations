@@ -6,7 +6,8 @@
   "license": "MIT",
   "private": true,
   "workspaces": [
-    "packages/opentelemetry-instrumentation-ws"
+    "packages/opentelemetry-instrumentation-ws",
+    "packages/opentelemetry-instrumentation-undici"
   ],
   "scripts": {
     "lint": "yarn run lint:prettier && yarn run lint:eslint",
