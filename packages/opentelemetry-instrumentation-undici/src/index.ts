@@ -29,7 +29,7 @@ export class UndiciInstrumentation extends InstrumentationBase<typeof Undici> {
   protected _requestSpans = new WeakMap<IncomingMessage, Span>();
 
   constructor(config: UndiciInstrumentationConfig = {}) {
-    super("opentelemetry-instrumentation-undici", "0.27.0", config);
+    super("opentelemetry-instrumentation-undici", "0.1.1", config);
   }
 
   protected init() {
