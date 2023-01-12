@@ -138,7 +138,7 @@ export class UndiciInstrumentation extends InstrumentationBase<typeof Undici> {
     if (this._config.requestHook) {
       safeExecuteInTheMiddle(
         () =>
-          this._config.requestHook!(span!, {
+          this._config.requestHook!(span, {
             dispatcher,
             options,
           }),
