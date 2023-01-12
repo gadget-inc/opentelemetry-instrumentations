@@ -1,0 +1,31 @@
+name: Release
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "packages/**/package.json"
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-test-env
+      - name: Build all packages
+        shell: nix develop -c bash -eo pipefail -l {0}
+        run: yarn build
+      - name: Publish opentelemetry-instrumentation-undici
+        uses: JS-DevTools/npm-publish@v1
+        with:
+          token: ${{ secrets.NPM_TOKEN }}
+          package: ./packages/opentelemetry-instrumentation-undici/package.json
+          access: public
+      - name: Publish opentelemetry-instrumentation-ws
+        uses: JS-DevTools/npm-publish@v1
+        with:
+          token: ${{ secrets.NPM_TOKEN }}
+          package: ./packages/opentelemetry-instrumentation-ws/package.json
+          access: public
