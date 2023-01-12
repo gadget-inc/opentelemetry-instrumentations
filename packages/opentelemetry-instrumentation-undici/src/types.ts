@@ -1,10 +1,10 @@
 import { Span } from "@opentelemetry/api";
 import { InstrumentationConfig } from "@opentelemetry/instrumentation";
-import Dispatcher, { DispatchOptions } from "undici/types/dispatcher";
+import Dispatcher from "undici/types/dispatcher";
 
 export interface HookInfo {
   dispatcher: Dispatcher;
-  options: DispatchOptions;
+  options: Dispatcher.DispatchOptions;
 }
 
 export type HookFunction = (span: Span, hookInfo: HookInfo) => void;
