@@ -1,6 +1,6 @@
 import { Span } from "@opentelemetry/api";
 import { InstrumentationConfig } from "@opentelemetry/instrumentation";
-import Dispatcher from "undici/types/dispatcher";
+import { Dispatcher } from "undici";
 
 export interface HookInfo {
   dispatcher: Dispatcher;
