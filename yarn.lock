@@ -879,7 +879,7 @@
   dependencies:
     "@opentelemetry/semantic-conventions" "1.9.0"
 
-"@opentelemetry/core@^1.3.0":
+"@opentelemetry/core@^1.15.0":
   version "1.15.0"
   resolved "https://registry.npmjs.org/@opentelemetry/core/-/core-1.15.0.tgz#2ba928df0443732825a72a766c2edae9a7f9863f"
   integrity sha512-GGTS6BytfaN8OgbCUOnxg/a9WVsVUj0484zXHZuBzvIXx7V4Tmkb0IHnnhS7Q0cBLNLgjNuvrCpQaP8fIvO4bg==
