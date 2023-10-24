@@ -58,7 +58,7 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
   protected _requestSpans = new WeakMap<IncomingMessage, Span>();
 
   constructor(config: WSInstrumentationConfig = {}) {
-    super("opentelemetry-instrumentation-ws", "0.4.3", config);
+    super("opentelemetry-instrumentation-ws", "0.5.0", config);
   }
 
   protected init() {
