@@ -16,7 +16,7 @@ jobs:
       - uses: ./.github/actions/setup-test-env
       - name: Build all packages
         shell: nix develop -c bash -eo pipefail -l {0}
-        run: yarn build
+        run: pnpm build
       - name: Publish opentelemetry-instrumentation-undici
         uses: JS-DevTools/npm-publish@v1
         with:

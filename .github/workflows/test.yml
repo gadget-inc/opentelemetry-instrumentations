@@ -10,10 +10,10 @@ jobs:
       - uses: ./.github/actions/setup-test-env
       - name: Build all packages (so they can require each other)
         shell: nix develop -c bash -eo pipefail -l {0}
-        run: yarn build
+        run: pnpm build
       - name: Test
         shell: nix develop -c bash -eo pipefail -l {0}
-        run: yarn test
+        run: pnpm test
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -21,4 +21,4 @@ jobs:
       - uses: ./.github/actions/setup-test-env
       - name: Lint
         shell: nix develop -c bash -eo pipefail -l {0}
-        run: yarn lint
+        run: pnpm lint
