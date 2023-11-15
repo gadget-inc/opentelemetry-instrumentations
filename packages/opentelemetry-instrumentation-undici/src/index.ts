@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-this-alias */
 /* eslint-disable @typescript-eslint/ban-types */
-import { context, diag, propagation, Span, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
+import type { Span } from "@opentelemetry/api";
+import { context, diag, propagation, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
 import {
   InstrumentationBase,
   InstrumentationNodeModuleDefinition,
@@ -8,9 +9,9 @@ import {
   safeExecuteInTheMiddle,
 } from "@opentelemetry/instrumentation";
 import { SemanticAttributes } from "@opentelemetry/semantic-conventions";
-import { IncomingMessage } from "http";
-import * as Undici from "undici";
-import { UndiciInstrumentationConfig } from "./types";
+import type { IncomingMessage } from "http";
+import type * as Undici from "undici";
+import type { UndiciInstrumentationConfig } from "./types";
 
 export const endSpan = (span: Span, err: NodeJS.ErrnoException | null | undefined) => {
   if (err) {
@@ -29,7 +30,7 @@ export class UndiciInstrumentation extends InstrumentationBase<typeof Undici> {
   protected _requestSpans = new WeakMap<IncomingMessage, Span>();
 
   constructor(config: UndiciInstrumentationConfig = {}) {
-    super("opentelemetry-instrumentation-undici", "0.2.0", config);
+    super("opentelemetry-instrumentation-undici", "0.2.1", config);
   }
 
   protected init() {
@@ -59,6 +60,7 @@ export class UndiciInstrumentation extends InstrumentationBase<typeof Undici> {
       ),
     ];
   }
+
   private _patchDispatch = (
     original: (this: Undici.Dispatcher, options: Undici.Dispatcher.DispatchOptions, handlers: Undici.Dispatcher.DispatchHandlers) => boolean
   ) => {
@@ -72,6 +74,7 @@ export class UndiciInstrumentation extends InstrumentationBase<typeof Undici> {
       const dispatcher = this;
 
       const requestContext = trace.setSpan(context.active(), currentSpan);
+      options.headers ??= {};
       propagation.inject(requestContext, options.headers);
 
       const oldOnConnect = handlers.onConnect;
