@@ -26,11 +26,11 @@ export const endSpan = (span: Span, err: NodeJS.ErrnoException | null | undefine
 
 /** Instrumentation for the `ws` library WebSocket class */
 export class UndiciInstrumentation extends InstrumentationBase<typeof Undici> {
-  protected override _config: UndiciInstrumentationConfig = {};
+  declare _config: UndiciInstrumentationConfig;
   protected _requestSpans = new WeakMap<IncomingMessage, Span>();
 
   constructor(config: UndiciInstrumentationConfig = {}) {
-    super("opentelemetry-instrumentation-undici", "0.2.1", config);
+    super("opentelemetry-instrumentation-undici", "0.2.2", config);
   }
 
   protected init() {
