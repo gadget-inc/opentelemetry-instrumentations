@@ -29,3 +29,9 @@ jobs:
           token: ${{ secrets.NPM_TOKEN }}
           package: ./packages/opentelemetry-instrumentation-ws/package.json
           access: public
+      - name: Publish opentelemetry-instrumentation-jest
+        uses: JS-DevTools/npm-publish@v1
+        with:
+          token: ${{ secrets.NPM_TOKEN }}
+          package: ./packages/opentelemetry-instrumentation-jest/package.json
+          access: public
