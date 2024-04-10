@@ -56,7 +56,7 @@ function runWithSpan<T>(span: Span, run: () => T): T | Promise<T> {
   }
 }
 
-/** Instrumentation for the `ws` library WebSocket class */
+/** Instrumentation for the `jest` test library */
 export class JestInstrumentation extends InstrumentationBase {
   protected override _config: JestInstrumentationConfig = {};
   tracerProvider!: NodeTracerProvider;
