@@ -1,4 +1,3 @@
 packages:
   - "packages/opentelemetry-instrumentation-ws"
-  - "packages/opentelemetry-instrumentation-undici"
   - "packages/opentelemetry-instrumentation-jest"
