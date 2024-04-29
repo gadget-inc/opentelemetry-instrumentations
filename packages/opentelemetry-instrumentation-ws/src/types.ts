@@ -1,5 +1,5 @@
-import { Span } from "@opentelemetry/api";
-import { InstrumentationConfig } from "@opentelemetry/instrumentation";
+import type { Span } from "@opentelemetry/api";
+import type { InstrumentationConfig } from "@opentelemetry/instrumentation";
 
 export interface HookInfo {
   payload: any | any[];

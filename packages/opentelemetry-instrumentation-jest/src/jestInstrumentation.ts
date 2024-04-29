@@ -105,14 +105,14 @@ export class JestInstrumentation extends InstrumentationBase {
   }
 
   executeBeforeHook(rootTestSpan: Span, spec: any) {
-    const config = this._config;
-    if (!config.beforeHook) {
+    const { beforeHook } = this._config;
+    if (!beforeHook) {
       return;
     }
 
     safeExecuteInTheMiddle(
       () => {
-        config.beforeHook!(rootTestSpan, spec);
+        beforeHook(rootTestSpan, spec);
       },
       (err) => {
         if (err) {
@@ -124,14 +124,14 @@ export class JestInstrumentation extends InstrumentationBase {
   }
 
   executeAfterHook(rootTestSpan: Span, spec: any, error?: Error) {
-    const config = this._config;
-    if (!config.afterHook) {
+    const { afterHook } = this._config;
+    if (!afterHook) {
       return;
     }
 
     safeExecuteInTheMiddle(
       () => {
-        config.afterHook!(rootTestSpan, spec, error);
+        afterHook(rootTestSpan, spec, error);
       },
       (err) => {
         if (err) {
@@ -160,7 +160,7 @@ export class JestInstrumentation extends InstrumentationBase {
           return moduleExports;
         },
         (moduleExports) => {
-          return moduleExports as any;
+          return moduleExports;
         }
       ),
     ];
