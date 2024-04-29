@@ -1,7 +1,9 @@
 /* eslint-disable @typescript-eslint/no-this-alias */
 /* eslint-disable @typescript-eslint/ban-types */
-import { context, Context, diag, propagation, ROOT_CONTEXT, Span, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
-import { RPCMetadata, RPCType, setRPCMetadata } from "@opentelemetry/core";
+import type { Context, Span } from "@opentelemetry/api";
+import { context, diag, propagation, ROOT_CONTEXT, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
+import type { RPCMetadata } from "@opentelemetry/core";
+import { RPCType, setRPCMetadata } from "@opentelemetry/core";
 import {
   InstrumentationBase,
   InstrumentationNodeModuleDefinition,
@@ -9,14 +11,23 @@ import {
   safeExecuteInTheMiddle,
 } from "@opentelemetry/instrumentation";
 import { getIncomingRequestAttributes } from "@opentelemetry/instrumentation-http";
-import { SemanticAttributes } from "@opentelemetry/semantic-conventions";
-import type * as http from "http";
-import type * as https from "http";
-import { IncomingMessage } from "http";
+import {
+  SEMATTRS_HTTP_STATUS_CODE,
+  SEMATTRS_MESSAGING_DESTINATION_KIND,
+  SEMATTRS_MESSAGING_DESTINATION,
+  SEMATTRS_MESSAGING_OPERATION,
+  SEMATTRS_MESSAGING_PROTOCOL,
+  SEMATTRS_MESSAGING_SYSTEM,
+  SEMATTRS_NET_HOST_IP,
+  SEMATTRS_NET_HOST_PORT,
+  SEMATTRS_NET_PEER_IP,
+  SEMATTRS_NET_PEER_PORT,
+} from "@opentelemetry/semantic-conventions";
+import type { IncomingMessage } from "http";
 import isPromise from "is-promise";
-import { Duplex } from "stream";
-import WS, { ErrorEvent, Server, WebSocket } from "ws";
-import { WSInstrumentationConfig } from "./types";
+import type { Duplex } from "stream";
+import type { ErrorEvent, Server, WebSocket } from "ws";
+import type { WSInstrumentationConfig } from "./types";
 
 const endSpan = (traced: () => any | Promise<any>, span: Span) => {
   try {
@@ -53,7 +64,7 @@ interface ExtendedWebsocket extends WebSocket {
 }
 
 /** Instrumentation for the `ws` library WebSocket class */
-export class WSInstrumentation extends InstrumentationBase<WS> {
+export class WSInstrumentation extends InstrumentationBase {
   protected override _config: WSInstrumentationConfig = {};
   protected _requestSpans = new WeakMap<IncomingMessage, Span>();
 
@@ -65,7 +76,7 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
     const self = this;
 
     return [
-      new InstrumentationNodeModuleDefinition<WS>(
+      new InstrumentationNodeModuleDefinition(
         "ws",
         [">=7"],
         (moduleExports, moduleVersion) => {
@@ -79,7 +90,7 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
 
           diag.debug(`ws instrumentation: applying patch to ws@${moduleVersion}`);
 
-          const WebSocket = this._patchConstructor(moduleExports as any);
+          const WebSocket = this._patchConstructor(moduleExports);
 
           if (self._config.sendSpans) {
             if (isWrapped(WebSocket.prototype.send)) {
@@ -101,10 +112,10 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
           return WebSocket as any;
         },
         (moduleExports) => {
-          return (moduleExports as any).__original;
+          return moduleExports.__original;
         }
       ),
-      new InstrumentationNodeModuleDefinition<typeof http>(
+      new InstrumentationNodeModuleDefinition(
         "http",
         ["*"],
         (moduleExports) => {
@@ -123,7 +134,7 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
           this._unwrap(moduleExports.Server.prototype, "emit");
         }
       ),
-      new InstrumentationNodeModuleDefinition<typeof https>(
+      new InstrumentationNodeModuleDefinition(
         "https",
         ["*"],
         (moduleExports) => {
@@ -153,22 +164,22 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
       _openSpan: Span | undefined;
 
       constructor(address: string, protocols: any, options: any) {
-        let connectingSpan: Span | null = null;
+        const connectingSpan = address
+          ? self.tracer.startSpan(`WS connect`, {
+              kind: SpanKind.CLIENT,
+              attributes: {
+                [SEMATTRS_MESSAGING_SYSTEM]: "ws",
+                [SEMATTRS_MESSAGING_DESTINATION_KIND]: "websocket",
+                [SEMATTRS_MESSAGING_OPERATION]: "connect",
+              },
+            })
+          : null;
 
         if (!options) {
           options = {};
         }
 
-        if (address != null) {
-          connectingSpan = self.tracer.startSpan(`WS connect`, {
-            kind: SpanKind.CLIENT,
-            attributes: {
-              [SemanticAttributes.MESSAGING_SYSTEM]: "ws",
-              [SemanticAttributes.MESSAGING_DESTINATION_KIND]: "websocket",
-              [SemanticAttributes.MESSAGING_OPERATION]: "connect",
-            },
-          });
-
+        if (connectingSpan) {
           if (!options.headers) {
             options.headers = {};
           }
@@ -182,20 +193,20 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
 
         if (connectingSpan) {
           connectingSpan.setAttributes({
-            [SemanticAttributes.MESSAGING_DESTINATION]: this.url,
-            [SemanticAttributes.MESSAGING_PROTOCOL]: this.protocol,
+            [SEMATTRS_MESSAGING_DESTINATION]: this.url,
+            [SEMATTRS_MESSAGING_PROTOCOL]: this.protocol,
           });
 
           const connectionErrorListener = (error: ErrorEvent) => {
-            connectingSpan!.recordException(error);
-            connectingSpan!.setStatus({ code: SpanStatusCode.ERROR, message: error?.message });
-            connectingSpan!.end();
+            connectingSpan.recordException(error);
+            connectingSpan.setStatus({ code: SpanStatusCode.ERROR, message: error?.message });
+            connectingSpan.end();
           };
 
           this.once("error", connectionErrorListener);
 
           this.once("open", () => {
-            connectingSpan!.end();
+            connectingSpan.end();
             this.removeEventListener("error", connectionErrorListener);
           });
         }
@@ -204,8 +215,8 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
           this._openSpan = self.tracer.startSpan(`WS open`, {
             kind: connectingSpan ? SpanKind.CLIENT : SpanKind.SERVER,
             attributes: {
-              [SemanticAttributes.MESSAGING_SYSTEM]: "ws",
-              [SemanticAttributes.MESSAGING_DESTINATION_KIND]: "websocket",
+              [SEMATTRS_MESSAGING_SYSTEM]: "ws",
+              [SEMATTRS_MESSAGING_DESTINATION_KIND]: "websocket",
             },
           });
           // we don't really have anything to do with the new context returned here, just let it float
@@ -229,7 +240,7 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
         if (self._config.messageEvents) {
           this.on("message", (_message: MessageEvent) => {
             this._openSpan?.addEvent("ws.incoming-message", {
-              [SemanticAttributes.MESSAGING_SYSTEM]: "ws",
+              [SEMATTRS_MESSAGING_SYSTEM]: "ws",
             });
           });
         }
@@ -253,14 +264,15 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
       const span = self.tracer.startSpan(`WS send`, {
         kind: SpanKind.CLIENT,
         attributes: {
-          [SemanticAttributes.MESSAGING_DESTINATION]: this.url,
+          [SEMATTRS_MESSAGING_DESTINATION]: this.url,
         },
       });
 
-      if (self._config.sendHook) {
+      const { sendHook } = self._config;
+      if (sendHook) {
         safeExecuteInTheMiddle(
           () =>
-            self._config.sendHook!(span, {
+            sendHook(span, {
               payload: {
                 data,
                 options,
@@ -299,13 +311,14 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
       const span = self.tracer.startSpan(`WS close`, {
         kind: SpanKind.CLIENT,
         attributes: {
-          [SemanticAttributes.MESSAGING_DESTINATION]: this.url,
+          [SEMATTRS_MESSAGING_DESTINATION]: this.url,
         },
       });
 
-      if (self._config.closeHook) {
+      const { closeHook } = self._config;
+      if (closeHook) {
         safeExecuteInTheMiddle(
-          () => self._config.closeHook!(span, { payload: args }),
+          () => closeHook(span, { payload: args }),
           (e) => {
             if (e) {
               diag.error("ws instrumentation: closeHook failed", e);
@@ -338,10 +351,10 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
           attributes: getIncomingRequestAttributes(request, {
             component: "WS",
             hookAttributes: {
-              [SemanticAttributes.NET_HOST_IP]: request.socket.localAddress,
-              [SemanticAttributes.NET_HOST_PORT]: request.socket.localPort,
-              [SemanticAttributes.NET_PEER_IP]: request.socket.remoteAddress,
-              [SemanticAttributes.NET_PEER_PORT]: request.socket.remotePort,
+              [SEMATTRS_NET_HOST_IP]: request.socket.localAddress,
+              [SEMATTRS_NET_HOST_PORT]: request.socket.localPort,
+              [SEMATTRS_NET_PEER_IP]: request.socket.remoteAddress,
+              [SEMATTRS_NET_PEER_PORT]: request.socket.remotePort,
             },
           }),
         },
@@ -392,17 +405,18 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
         attributes: getIncomingRequestAttributes(request, {
           component: "WS",
           hookAttributes: {
-            [SemanticAttributes.NET_HOST_IP]: request.socket.localAddress,
-            [SemanticAttributes.NET_HOST_PORT]: request.socket.localPort,
-            [SemanticAttributes.NET_PEER_IP]: request.socket.remoteAddress,
-            [SemanticAttributes.NET_PEER_PORT]: request.socket.remotePort,
+            [SEMATTRS_NET_HOST_IP]: request.socket.localAddress,
+            [SEMATTRS_NET_HOST_PORT]: request.socket.localPort,
+            [SEMATTRS_NET_PEER_IP]: request.socket.remoteAddress,
+            [SEMATTRS_NET_PEER_PORT]: request.socket.remotePort,
           },
         }),
       });
 
-      if (self._config.handleUpgradeHook) {
+      const { handleUpgradeHook } = self._config;
+      if (handleUpgradeHook) {
         safeExecuteInTheMiddle(
-          () => self._config.handleUpgradeHook!(span, { payload: { request, socket, upgradeHead } }),
+          () => handleUpgradeHook(span, { payload: { request, socket, upgradeHead } }),
           (e) => {
             if (e) {
               diag.error("ws instrumentation: handleUpgradeHook failed", e);
@@ -417,7 +431,7 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
           () =>
             original.call(this, request, socket, upgradeHead, function (this: any, websocket: WebSocket, request: IncomingMessage) {
               parentSpan?.setAttributes({
-                [SemanticAttributes.HTTP_STATUS_CODE]: 101,
+                [SEMATTRS_HTTP_STATUS_CODE]: 101,
               });
               parentSpan?.end();
               self._requestSpans.delete(request);
