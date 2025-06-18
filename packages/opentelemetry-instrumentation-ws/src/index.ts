@@ -1,7 +1,9 @@
 /* eslint-disable @typescript-eslint/no-this-alias */
 /* eslint-disable @typescript-eslint/ban-types */
-import { context, Context, diag, propagation, ROOT_CONTEXT, Span, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
-import { RPCMetadata, RPCType, setRPCMetadata } from "@opentelemetry/core";
+import type { Context, Exception, Span, SpanAttributes, SpanAttributeValue, SpanContext, SpanStatus, TimeInput } from "@opentelemetry/api";
+import { context, diag, propagation, ROOT_CONTEXT, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
+import type { RPCMetadata } from "@opentelemetry/core";
+import { RPCType, setRPCMetadata } from "@opentelemetry/core";
 import {
   InstrumentationBase,
   InstrumentationNodeModuleDefinition,
@@ -12,11 +14,12 @@ import { getIncomingRequestAttributes } from "@opentelemetry/instrumentation-htt
 import { SemanticAttributes } from "@opentelemetry/semantic-conventions";
 import type * as http from "http";
 import type * as https from "http";
-import { IncomingMessage } from "http";
+import type { IncomingMessage } from "http";
 import isPromise from "is-promise";
-import { Duplex } from "stream";
-import WS, { ErrorEvent, Server, WebSocket } from "ws";
-import { WSInstrumentationConfig } from "./types";
+import type { Duplex } from "stream";
+import type { ErrorEvent, Server, WebSocket } from "ws";
+import type WS from "ws";
+import type { WSInstrumentationConfig } from "./types";
 
 const endSpan = (traced: () => any | Promise<any>, span: Span) => {
   try {
@@ -419,8 +422,11 @@ export class WSInstrumentation extends InstrumentationBase<WS> {
               parentSpan?.setAttributes({
                 [SemanticAttributes.HTTP_STATUS_CODE]: 101,
               });
-              parentSpan?.end();
-              self._requestSpans.delete(request);
+              if (parentSpan) {
+                const actualEndTime = new Date();
+                const originalEnd = parentSpan.end;
+                parentSpan.end = (_endtime?: TimeInput) => originalEnd(actualEndTime); // Set the end time to the current time but don't end the span yet
+              }
 
               return callback.call(this, websocket, request);
             }),
